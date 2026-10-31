@@ -1,4 +1,6 @@
 [
+	{ "caption": "Wispr Learn: Abrir CSV de palavras", "command": "wispr_learn_open_csv" },
+	{ "caption": "Wispr Learn: Arquivar CSV e começar um novo", "command": "wispr_learn_archive_csv" },
 	{ "caption": "Wispr Learn: Desfazer última palavra aprendida", "command": "wispr_learn_undo" },
 	{ "caption": "Wispr Learn: Ver log", "command": "wispr_learn_show_log" },
 	{ "caption": "Wispr Learn: Ativar/Desativar", "command": "wispr_learn_toggle" }

@@ -14,6 +14,7 @@ Fluxo:
 import sublime
 import sublime_plugin
 
+import csv
 import datetime
 import difflib
 import os
@@ -226,6 +227,67 @@ def learn_word(phrase, observed):
             con.close()
 
 
+def csv_path():
+    p = opt("csv_path", "")
+    if p:
+        return os.path.expandvars(os.path.expanduser(p))
+    return os.path.join(os.path.expanduser("~"), "Documents", "WisprLearn-dicionario.csv")
+
+
+def csv_read_words():
+    path = csv_path()
+    if not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        return [row[0] for row in csv.reader(f) if row and row[0].strip()]
+
+
+def in_wispr_dictionary(phrase):
+    """Leitura apenas: a palavra ja esta ativa no dicionario do Wispr?"""
+    try:
+        con = connect()
+        try:
+            return con.execute(
+                "SELECT 1 FROM Dictionary WHERE teamDictionaryId=? AND isDeleted=0 "
+                "AND phrase=? COLLATE NOCASE LIMIT 1", (TEAM, phrase)).fetchone() is not None
+        finally:
+            con.close()
+    except Exception:
+        return False
+
+
+def learn_word_csv(phrase):
+    """Acrescenta a palavra (uma coluna = vocabulario, sem regra de substituicao)."""
+    with _DB_LOCK:
+        if in_wispr_dictionary(phrase):
+            return None, "existing"
+        if not csv_append(phrase):
+            return None, "existing"
+        return phrase, "csv"
+
+
+def csv_append(phrase):
+    """Acrescenta ao CSV se ainda nao estiver la. Retorna True se acrescentou."""
+    if any(w.lower() == phrase.lower() for w in csv_read_words()):
+        return False
+    path = csv_path()
+    d = os.path.dirname(path)
+    if d and not os.path.isdir(d):
+        os.makedirs(d)
+    with open(path, "a", encoding="utf-8", newline="") as f:
+        csv.writer(f).writerow([phrase])
+    return True
+
+
+def csv_remove(phrase):
+    with _DB_LOCK:
+        words = [w for w in csv_read_words() if w != phrase]
+        with open(csv_path(), "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            for word in words:
+                w.writerow([word])
+
+
 def unlearn(entry_id):
     now = wispr_ts()
     with _DB_LOCK:
@@ -306,11 +368,25 @@ def evaluate(track, view):
             status("[teste] aprenderia «%s»" % phrase)
             continue
         try:
-            entry_id, action = learn_word(phrase, observed)
+            if opt("mode", "csv") == "database":
+                entry_id, action = learn_word(phrase, observed)
+                if action != "existing" and opt("csv_backup", True):
+                    try:
+                        with _DB_LOCK:
+                            csv_append(phrase)  # copia de seguranca para reimportar
+                    except Exception as e:
+                        log("ERRO no CSV de backup: %r" % (e,))
+            else:
+                entry_id, action = learn_word_csv(phrase)
             LAST_LEARNED.append((entry_id, action, phrase, observed))
             log("%s: %r (ditado %r, sim %.2f)" % (action, phrase, observed, sim))
             if action == "existing":
                 status("«%s» já estava no dicionário" % phrase)
+            elif action == "csv":
+                n = len(csv_read_words())
+                mb = os.path.getsize(csv_path()) / 1048576.0
+                extra = " — CSV perto de 3 MB, arquive-o" if mb >= float(opt("csv_warn_mb", 2.5)) else ""
+                status("«%s» adicionada ao CSV (%d palavras)%s" % (phrase, n, extra))
             else:
                 status("aprendeu «%s» (ditado: «%s»)" % (phrase, observed))
         except Exception as e:
@@ -421,9 +497,12 @@ class WisprLearnUndoCommand(sublime_plugin.ApplicationCommand):
     def run(self):
         while LAST_LEARNED:
             entry_id, action, phrase, observed = LAST_LEARNED.pop()
-            if action in ("inserted", "reactivated"):
+            if action in ("inserted", "reactivated", "csv"):
                 try:
-                    unlearn(entry_id)
+                    if action != "csv":
+                        unlearn(entry_id)
+                    if os.path.exists(csv_path()):
+                        csv_remove(phrase)
                     log("desfeito: %r" % phrase)
                     status("removeu «%s» do dicionário" % phrase)
                 except Exception as e:
@@ -440,6 +519,30 @@ class WisprLearnShowLogCommand(sublime_plugin.WindowCommand):
         self.window.open_file(LOG_PATH)
 
 
+class WisprLearnOpenCsvCommand(sublime_plugin.WindowCommand):
+    def run(self):
+        path = csv_path()
+        if not os.path.exists(path):
+            status("CSV ainda vazio: nenhuma palavra aprendida")
+            return
+        self.window.open_file(path)
+
+
+class WisprLearnArchiveCsvCommand(sublime_plugin.ApplicationCommand):
+    """Depois de importar no Wispr: renomeia o CSV com a data e comeca um novo."""
+    def run(self):
+        path = csv_path()
+        if not os.path.exists(path):
+            status("não há CSV para arquivar")
+            return
+        base, ext = os.path.splitext(path)
+        dest = "%s-importado-%s%s" % (base, datetime.datetime.now().strftime("%Y%m%d-%H%M"), ext)
+        with _DB_LOCK:
+            os.rename(path, dest)
+        log("CSV arquivado em %s" % dest)
+        status("CSV arquivado; novas palavras vão para um arquivo novo")
+
+
 class WisprLearnToggleCommand(sublime_plugin.ApplicationCommand):
     def run(self):
         s = settings()
@@ -454,6 +557,7 @@ def plugin_loaded():
         "python %s" % sys.version.split()[0],
         "sqlite3 %s" % (("ok " + sqlite3.sqlite_version) if sqlite3 else ("FALHOU " + str(SQLITE_ERROR))),
         "banco %s (existe=%s)" % (db_path(), os.path.exists(db_path())),
+        "modo %s%s" % (opt("mode", "csv"), (" -> " + csv_path()) if opt("mode", "csv") != "database" else ""),
     ]
     try:
         with open(STATUS_PATH, "w", encoding="utf-8") as f:

@@ -2,6 +2,24 @@
 	// Liga/desliga o aprendizado
 	"enabled": true,
 
+	// "csv" (padrão, seguro): grava as palavras num CSV para importar em
+	//        Wispr > Dictionary > Import. Não toca no banco do Wispr.
+	// "database": grava direto no banco do Wispr (não suportado pelo Wispr;
+	//        só passa a valer depois de reiniciar o Wispr).
+	"mode": "csv",
+
+	// Onde fica o CSV (vazio = Documentos\WisprLearn-dicionario.csv)
+	"csv_path": "",
+
+	// O CSV pode crescer e ser reimportado sempre (o Wispr pula o que já tem;
+	// o limite de 1000 conta só palavras novas). O limite real é 3 MB por
+	// arquivo: avisa quando o CSV chegar a este tamanho (em MB).
+	"csv_warn_mb": 2.5,
+
+	// No modo "database", também anota cada palavra no CSV como cópia de
+	// segurança (se a sincronização do Wispr apagar algo, é só importar o CSV)
+	"csv_backup": true,
+
 	// true = só registra no log o que aprenderia, sem gravar no Wispr
 	"dry_run": false,
 
