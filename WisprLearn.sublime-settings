@@ -1,0 +1,28 @@
+{
+	// Liga/desliga o aprendizado
+	"enabled": true,
+
+	// true = só registra no log o que aprenderia, sem gravar no Wispr
+	"dry_run": false,
+
+	// Caminho do banco do Wispr (vazio = %APPDATA%\Wispr Flow\flow.sqlite)
+	"db_path": "",
+
+	// Quão parecida a palavra nova precisa ser da ditada (0 a 1)
+	"min_similarity": 0.55,
+
+	// Se mais que essa fração das palavras mudou, é reescrita: não aprende nada
+	"max_change_ratio": 0.4,
+
+	// Segundos sem mexer no trecho antes de analisar a correção
+	"idle_seconds": 12,
+
+	// Por quanto tempo um ditado continua sendo acompanhado (segundos)
+	"max_track_seconds": 600,
+
+	// Tamanho mínimo da palavra aprendida
+	"min_length": 3,
+
+	// Mostra mensagens no console do Sublime
+	"debug": false
+}
